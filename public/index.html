@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>✨ StarSky — 我的星空</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background:#000;
+  overflow:hidden;
+  font-family:'Segoe UI',sans-serif;
+  cursor:crosshair;
+  user-select:none;
+}
+
+#canvas-bg { position:fixed; inset:0; z-index:0; }
+#stars-layer { position:fixed; inset:0; z-index:1; }
+
+/* ── HUD ── */
+#hud {
+  position:fixed; top:20px; left:50%; transform:translateX(-50%);
+  z-index:100; display:flex; flex-direction:column; align-items:center; gap:6px;
+  pointer-events:none;
+}
+#title {
+  font-size:28px; font-weight:300; letter-spacing:8px; color:#fff;
+  animation:titleGlow 3s ease-in-out infinite alternate;
+}
+@keyframes titleGlow {
+  from { text-shadow:0 0 20px #a78bfa,0 0 40px #7c3aed; }
+  to   { text-shadow:0 0 40px #c4b5fd,0 0 80px #8b5cf6,0 0 120px #6d28d9; }
+}
+#subtitle { font-size:12px; letter-spacing:4px; color:rgba(167,139,250,.6); text-transform:uppercase; }
+#sky-badge {
+  font-size:11px; letter-spacing:3px; color:rgba(167,139,250,.4);
+  border:1px solid rgba(139,92,246,.2); border-radius:50px; padding:3px 14px;
+}
+
+/* ── Stats ── */
+#stats-bar {
+  position:fixed; bottom:72px; left:50%; transform:translateX(-50%);
+  z-index:100; color:rgba(139,92,246,.5); font-size:11px; letter-spacing:2px;
+  pointer-events:none; white-space:nowrap;
+}
+
+/* ── Star count ── */
+#star-count {
+  position:fixed; top:20px; right:24px; z-index:100;
+  color:rgba(167,139,250,.6); font-size:12px; letter-spacing:2px;
+}
+
+/* ── Info ── */
+#info {
+  position:fixed; bottom:104px; left:50%; transform:translateX(-50%);
+  z-index:100; color:rgba(167,139,250,.4); font-size:11px; letter-spacing:2px;
+  pointer-events:none; text-align:center; white-space:nowrap;
+}
+
+/* ── Controls ── */
+#controls {
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  z-index:100; display:flex; gap:10px; pointer-events:all; flex-wrap:wrap; justify-content:center;
+}
+.btn {
+  background:rgba(255,255,255,.05); border:1px solid rgba(167,139,250,.35);
+  color:#c4b5fd; padding:9px 20px; border-radius:50px;
+  font-size:12px; letter-spacing:2px; cursor:pointer;
+  backdrop-filter:blur(10px); transition:all .3s; white-space:nowrap;
+}
+.btn:hover {
+  background:rgba(139,92,246,.3); border-color:#a78bfa;
+  box-shadow:0 0 20px rgba(139,92,246,.5); transform:translateY(-2px);
+}
+.btn-home { border-color:rgba(236,72,153,.4); color:#f9a8d4; }
+.btn-home:hover { background:rgba(236,72,153,.25); border-color:#f472b6; box-shadow:0 0 20px rgba(236,72,153,.4); }
+
+/* ── Modal ── */
+.modal-overlay {
+  position:fixed; inset:0; z-index:200;
+  background:rgba(0,0,0,.75); backdrop-filter:blur(4px);
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none; transition:opacity .3s;
+}
+.modal-overlay.active { opacity:1; pointer-events:all; }
+.modal {
+  background:linear-gradient(135deg,rgba(15,5,40,.97),rgba(30,10,60,.97));
+  border:1px solid rgba(139,92,246,.5); border-radius:20px;
+  padding:34px 38px; width:360px;
+  box-shadow:0 0 60px rgba(139,92,246,.3),inset 0 0 40px rgba(0,0,0,.4);
+  transform:translateY(20px); transition:transform .3s; position:relative;
+}
+.modal-overlay.active .modal { transform:translateY(0); }
+.modal h2 { color:#e9d5ff; font-size:19px; font-weight:300; letter-spacing:4px; margin-bottom:4px; }
+.modal p.sub { color:rgba(167,139,250,.5); font-size:11px; letter-spacing:2px; margin-bottom:24px; }
+.modal input,.modal textarea {
+  width:100%; background:rgba(255,255,255,.05); border:1px solid rgba(139,92,246,.3);
+  border-radius:10px; color:#e9d5ff; padding:11px 15px; font-size:13px;
+  letter-spacing:1px; outline:none; margin-bottom:12px; resize:none;
+  transition:border-color .3s,box-shadow .3s;
+}
+.modal input:focus,.modal textarea:focus {
+  border-color:#8b5cf6; box-shadow:0 0 15px rgba(139,92,246,.3);
+}
+.modal input::placeholder,.modal textarea::placeholder { color:rgba(167,139,250,.3); }
+.modal-btns { display:flex; gap:10px; margin-top:4px; }
+.btn-primary {
+  flex:1; background:linear-gradient(135deg,#7c3aed,#6d28d9);
+  border:none; color:#fff; padding:12px; border-radius:10px;
+  font-size:12px; letter-spacing:2px; cursor:pointer; transition:all .3s;
+}
+.btn-primary:hover {
+  background:linear-gradient(135deg,#8b5cf6,#7c3aed);
+  box-shadow:0 0 20px rgba(139,92,246,.6); transform:translateY(-1px);
+}
+.btn-cancel {
+  background:rgba(255,255,255,.05); border:1px solid rgba(139,92,246,.3);
+  color:rgba(167,139,250,.6); padding:12px 18px; border-radius:10px;
+  font-size:12px; cursor:pointer; transition:all .3s;
+}
+.btn-cancel:hover { border-color:rgba(139,92,246,.6); color:#c4b5fd; }
+
+/* ── Tooltip ── */
+#tooltip {
+  position:fixed; z-index:150; pointer-events:none;
+  opacity:0; transition:opacity .2s; transform:translate(-50%,-110%);
+}
+#tooltip.visible { opacity:1; }
+.tooltip-inner {
+  background:rgba(10,3,30,.97); border:1px solid rgba(139,92,246,.5);
+  border-radius:12px; padding:12px 18px; min-width:150px; max-width:240px;
+  text-align:center; box-shadow:0 0 30px rgba(139,92,246,.3);
+}
+.tt-name    { color:#e9d5ff; font-size:15px; font-weight:500; letter-spacing:2px; margin-bottom:4px; }
+.tt-wish    { color:rgba(167,139,250,.7); font-size:11px; letter-spacing:1px; margin-bottom:5px; }
+.tt-lighters{ color:rgba(167,139,250,.45); font-size:10px; letter-spacing:1px; }
+.tooltip-arrow {
+  width:0; height:0;
+  border-left:7px solid transparent; border-right:7px solid transparent;
+  border-top:7px solid rgba(139,92,246,.5); margin:0 auto;
+}
+
+/* ── Toast ── */
+#toast {
+  position:fixed; top:80px; left:50%;
+  transform:translateX(-50%) translateY(-10px);
+  z-index:300; background:rgba(10,3,30,.97);
+  border:1px solid rgba(139,92,246,.5); color:#c4b5fd;
+  padding:9px 22px; border-radius:50px; font-size:12px;
+  letter-spacing:2px; opacity:0; pointer-events:none;
+  transition:opacity .3s,transform .3s; white-space:nowrap;
+}
+#toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+/* ── Loading ── */
+#loading {
+  position:fixed; inset:0; z-index:500;
+  background:#000; display:flex; align-items:center; justify-content:center;
+  flex-direction:column; gap:16px; transition:opacity .5s;
+}
+#loading.fade { opacity:0; pointer-events:none; }
+.loader-ring {
+  width:48px; height:48px; border-radius:50%;
+  border:2px solid rgba(139,92,246,.2);
+  border-top-color:#8b5cf6;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+#loading p { color:rgba(167,139,250,.5); font-size:12px; letter-spacing:3px; }
+
+/* ── Star elements ── */
+.star-el {
+  position:absolute; border-radius:50%; cursor:pointer; pointer-events:all;
+  transform:translate(-50%,-50%);
+  animation:starPulse var(--dur,3s) ease-in-out infinite alternate;
+}
+.star-el:hover { transform:translate(-50%,-50%) scale(1.7) !important; z-index:10; }
+@keyframes starPulse {
+  from { opacity:var(--min-op,.4); filter:blur(0px); }
+  to   { opacity:var(--max-op,1);  filter:blur(var(--blur,1px)); }
+}
+.star-el::after {
+  content:''; position:absolute; inset:-6px; border-radius:50%;
+  border:1px solid currentColor; opacity:0;
+  transition:opacity .3s,transform .3s; transform:scale(.8);
+}
+.star-el:hover::after { opacity:.45; transform:scale(1); }
+
+/* ── Nebulae ── */
+.nebula {
+  position:fixed; border-radius:50%; filter:blur(80px);
+  pointer-events:none; z-index:0;
+  animation:nebulaDrift 20s ease-in-out infinite alternate;
+}
+@keyframes nebulaDrift {
+  from { transform:translate(0,0) scale(1); }
+  to   { transform:translate(30px,-20px) scale(1.1); }
+}
+
+/* ── Share box ── */
+#share-box {
+  position:fixed; bottom:130px; left:50%; transform:translateX(-50%);
+  z-index:100; display:none; gap:8px; pointer-events:all; align-items:center;
+}
+#share-box.show { display:flex; }
+#share-box input {
+  background:rgba(10,3,30,.97); border:1px solid rgba(139,92,246,.4);
+  color:#c4b5fd; padding:9px 16px; border-radius:50px;
+  font-size:12px; letter-spacing:1px; width:260px; outline:none;
+}
+</style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div id="loading">
+  <div class="loader-ring"></div>
+  <p>正在连接星空...</p>
+</div>
+
+<!-- Nebulae -->
+<div class="nebula" style="width:600px;height:600px;background:radial-gradient(circle,rgba(139,92,246,.14),transparent);top:-120px;left:-120px;animation-duration:26s;"></div>
+<div class="nebula" style="width:420px;height:420px;background:radial-gradient(circle,rgba(236,72,153,.09),transparent);bottom:-60px;right:-60px;animation-duration:19s;animation-direction:alternate-reverse;"></div>
+<div class="nebula" style="width:300px;height:300px;background:radial-gradient(circle,rgba(59,130,246,.09),transparent);top:38%;left:48%;animation-duration:23s;"></div>
+
+<canvas id="canvas-bg"></canvas>
+<div id="stars-layer"></div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="title">✦ StarSky ✦</div>
+  <div id="subtitle">点击宇宙，种下一颗星</div>
+  <div id="sky-badge">星空代码: <span id="my-sky-code">——</span></div>
+</div>
+
+<div id="star-count">✦ <span id="cnt">0</span> 颗星</div>
+<div id="info">点击空白处创建星星 · 悬停查看 · 右键点亮星星</div>
+<div id="stats-bar"><span id="stats-text">加载中...</span></div>
+
+<!-- Controls -->
+<div id="controls">
+  <button class="btn btn-home" id="btn-home" style="display:none">← 回到我的星空</button>
+  <button class="btn" id="btn-share">分享星空</button>
+  <button class="btn" id="btn-enter">进入他人星空</button>
+  <button class="btn" id="btn-clear">清空星空</button>
+</div>
+
+<!-- Share / enter box -->
+<div id="share-box">
+  <input type="text" id="visit-code" placeholder="输入星空代码 (如 A3BX7K)">
+  <button class="btn" id="btn-visit">前往 →</button>
+</div>
+
+<!-- Create star modal -->
+<div class="modal-overlay" id="modal-create">
+  <div class="modal">
+    <h2>✦ 命名星星</h2>
+    <p class="sub">为这颗星赋予名字与愿望</p>
+    <input  type="text" id="star-name" maxlength="20" placeholder="星星的名字">
+    <textarea id="star-wish" rows="3" maxlength="60" placeholder="许一个愿望（可选）"></textarea>
+    <div class="modal-btns">
+      <button class="btn-cancel" id="cancel-create">取消</button>
+      <button class="btn-primary" id="confirm-create">✨ 点亮它</button>
+    </div>
+  </div>
+</div>
+
+<!-- Light star modal -->
+<div class="modal-overlay" id="modal-light">
+  <div class="modal">
+    <h2>✦ 点亮星星</h2>
+    <p class="sub">留下你的名字，为这颗星添光</p>
+    <input type="text" id="lighter-name" maxlength="20" placeholder="你的名字">
+    <div class="modal-btns">
+      <button class="btn-cancel" id="cancel-light">取消</button>
+      <button class="btn-primary" id="confirm-light">点亮 ✨</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tooltip -->
+<div id="tooltip">
+  <div class="tooltip-inner">
+    <div class="tt-name"    id="tt-name">—</div>
+    <div class="tt-wish"    id="tt-wish"></div>
+    <div class="tt-lighters"id="tt-lighters"></div>
+  </div>
+  <div class="tooltip-arrow"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════
+//  BACKGROUND CANVAS
+// ════════════════════════════════════════════
+const canvas = document.getElementById('canvas-bg');
+const ctx    = canvas.getContext('2d');
+function resizeCanvas() { canvas.width = innerWidth; canvas.height = innerHeight; }
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+const bgStars = Array.from({length:220}, () => ({
+  x: Math.random()*innerWidth, y: Math.random()*innerHeight,
+  r: Math.random()*1.2, a: Math.random(), da:(Math.random()-.5)*.005,
+}));
+const shooters = [];
+function spawnShooter() {
+  shooters.push({
+    x: Math.random()*innerWidth*1.5 - innerWidth*.25,
+    y: Math.random()*innerHeight*.45,
+    vx: 6+Math.random()*8, vy: 3+Math.random()*5,
+    len: 80+Math.random()*120, alpha:1,
+    hue: 200+Math.random()*120,
+  });
+}
+setInterval(spawnShooter, 2400);
+
+(function drawBg() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  bgStars.forEach(s => {
+    s.a += s.da;
+    if (s.a<0||s.a>1) s.da*=-1;
+    ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
+    ctx.fillStyle = `rgba(255,255,255,${s.a*.5})`; ctx.fill();
+  });
+  for (let i=shooters.length-1; i>=0; i--) {
+    const s = shooters[i];
+    const g = ctx.createLinearGradient(s.x,s.y, s.x-s.len*(s.vx/10), s.y-s.len*(s.vy/10));
+    g.addColorStop(0, `hsla(${s.hue},90%,90%,${s.alpha})`);
+    g.addColorStop(1, 'transparent');
+    ctx.beginPath(); ctx.moveTo(s.x,s.y);
+    ctx.lineTo(s.x-s.len*(s.vx/10), s.y-s.len*(s.vy/10));
+    ctx.strokeStyle=g; ctx.lineWidth=2; ctx.stroke();
+    s.x+=s.vx; s.y+=s.vy; s.alpha-=.012;
+    if (s.alpha<=0) shooters.splice(i,1);
+  }
+  requestAnimationFrame(drawBg);
+})();
+
+// ════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════
+const NS_KEY = 'starsky_id_v3';
+const NT_KEY = 'starsky_token_v3';
+
+let mySkyId  = localStorage.getItem(NS_KEY);
+let myToken  = localStorage.getItem(NT_KEY);
+let viewId   = new URLSearchParams(location.search).get('sky');
+
+let currentSkyId, isOwner;
+let stars        = [];
+let pendingPos   = null;
+let lightTarget  = null;
+
+const COLORS = ['#fff','#fde68a','#93c5fd','#a78bfa','#f9a8d4','#6ee7b7','#fca5a5','#fdba74','#c4b5fd','#67e8f9'];
+const randColor = () => COLORS[Math.floor(Math.random()*COLORS.length)];
+
+// ════════════════════════════════════════════
+//  API HELPERS
+// ════════════════════════════════════════════
+async function api(method, path, body) {
+  const r = await fetch(path, {
+    method, headers:{'Content-Type':'application/json'},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return { ok: r.ok, status: r.status, data: await r.json() };
+}
+
+// ════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════
+async function init() {
+  // Ensure own sky exists
+  if (!mySkyId || !myToken) {
+    const { ok, data } = await api('POST', '/api/sky');
+    if (!ok) { hideLoading(); toast('服务器连接失败'); return; }
+    mySkyId = data.skyId; myToken = data.ownerToken;
+    localStorage.setItem(NS_KEY, mySkyId);
+    localStorage.setItem(NT_KEY, myToken);
+  }
+
+  if (viewId && viewId !== mySkyId) {
+    currentSkyId = viewId; isOwner = false;
+  } else {
+    currentSkyId = mySkyId; isOwner = true;
+    if (viewId) history.replaceState({}, '', location.pathname);
+  }
+
+  document.getElementById('my-sky-code').textContent = mySkyId;
+
+  if (!isOwner) {
+    document.getElementById('title').textContent   = '✦ 别人的星空 ✦';
+    document.getElementById('subtitle').textContent = '右键点亮一颗星 · 悬停查看';
+    document.getElementById('info').textContent     = '右键点击星星来点亮它 · 悬停查看';
+    document.getElementById('btn-home').style.display  = 'block';
+    document.getElementById('btn-share').style.display = 'none';
+    document.getElementById('btn-clear').style.display = 'none';
+    document.getElementById('sky-badge').style.display = 'none';
+  }
+
+  await loadStars();
+  loadStats();
+  hideLoading();
+
+  if (isOwner && stars.length === 0)
+    setTimeout(() => toast('欢迎！点击星空任意处创建你的第一颗星 ✨'), 600);
+  if (!isOwner)
+    setTimeout(() => toast(`正在游览 ${currentSkyId} 的星空 · 右键点亮星星`), 600);
+}
+
+function hideLoading() {
+  const el = document.getElementById('loading');
+  el.classList.add('fade');
+  setTimeout(() => el.remove(), 600);
+}
+
+// ════════════════════════════════════════════
+//  LOAD + RENDER STARS
+// ════════════════════════════════════════════
+async function loadStars() {
+  const { ok, status, data } = await api('GET', `/api/sky/${currentSkyId}`);
+  if (!ok) {
+    if (status === 404) toast('找不到这个星空');
+    stars = []; renderAll(); return;
+  }
+  stars = data.stars || [];
+  renderAll();
+}
+
+async function loadStats() {
+  const { ok, data } = await api('GET', '/api/stats');
+  if (!ok) return;
+  document.getElementById('stats-text').textContent =
+    `✦ ${data.skyCount} 个星空 · ${data.starCount} 颗星 · ${data.lightCount} 次点亮`;
+}
+
+const layer   = document.getElementById('stars-layer');
+const tooltip = document.getElementById('tooltip');
+
+function createStarEl(star) {
+  const el = document.createElement('div');
+  el.className = 'star-el';
+  el.id = 'star-' + star.id;
+  el.style.cssText = `
+    left:${(star.x*100).toFixed(3)}%;
+    top:${(star.y*100).toFixed(3)}%;
+    width:${star.size}px; height:${star.size}px;
+    background:${star.color};
+    box-shadow:0 0 ${star.size*2}px ${star.size}px ${star.color};
+    color:${star.color};
+    --dur:${(2+Math.random()*4).toFixed(1)}s;
+    --min-op:${(star.brightness*.3).toFixed(2)};
+    --max-op:${star.brightness.toFixed(2)};
+    --blur:${(star.size*.5).toFixed(1)}px;
+    transform:translate(-50%,-50%) scale(0);
+  `;
+
+  el.addEventListener('mouseenter', () => {
+    document.getElementById('tt-name').textContent     = star.name || '无名星';
+    document.getElementById('tt-wish').textContent     = star.wish ? `"${star.wish}"` : '';
+    document.getElementById('tt-lighters').textContent = star.lighters?.length
+      ? `✨ ${star.lighters.join(' · ')} 点亮了它`
+      : '还没有人点亮过';
+    const r = el.getBoundingClientRect();
+    tooltip.style.left = (r.left + r.width/2) + 'px';
+    tooltip.style.top  = r.top + 'px';
+    tooltip.classList.add('visible');
+  });
+  el.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
+
+  el.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    lightTarget = star.id;
+    document.getElementById('lighter-name').value = '';
+    document.getElementById('modal-light').classList.add('active');
+    setTimeout(() => document.getElementById('lighter-name').focus(), 80);
+  });
+
+  layer.appendChild(el);
+  requestAnimationFrame(() => {
+    el.style.transition = 'transform .5s cubic-bezier(.34,1.56,.64,1)';
+    el.style.transform  = 'translate(-50%,-50%) scale(1)';
+  });
+  return el;
+}
+
+function renderAll() {
+  layer.innerHTML = '';
+  stars.forEach(createStarEl);
+  document.getElementById('cnt').textContent = stars.length;
+}
+
+// ════════════════════════════════════════════
+//  CREATE STAR
+// ════════════════════════════════════════════
+function openCreateModal(x, y) {
+  if (!isOwner) return;
+  pendingPos = { x: x/innerWidth, y: y/innerHeight };
+  document.getElementById('star-name').value = '';
+  document.getElementById('star-wish').value = '';
+  document.getElementById('modal-create').classList.add('active');
+  setTimeout(() => document.getElementById('star-name').focus(), 80);
+}
+
+layer.addEventListener('click',  e => { if (e.target===layer)  openCreateModal(e.clientX, e.clientY); });
+canvas.addEventListener('click', e => openCreateModal(e.clientX, e.clientY));
+
+document.getElementById('confirm-create').addEventListener('click', async () => {
+  const name = document.getElementById('star-name').value.trim() || `星星 #${stars.length+1}`;
+  const wish = document.getElementById('star-wish').value.trim();
+  const color = randColor();
+
+  document.getElementById('modal-create').classList.remove('active');
+
+  const { ok, data } = await api('POST', `/api/sky/${currentSkyId}/star`, {
+    name, wish,
+    x: pendingPos.x, y: pendingPos.y,
+    size:       4 + Math.random()*14,
+    color,
+    brightness: 0.4 + Math.random()*0.6,
+    ownerToken: myToken,
+  });
+
+  if (!ok) { toast('创建失败，请重试'); return; }
+
+  stars.push(data.star);
+  createStarEl(data.star);
+  document.getElementById('cnt').textContent = stars.length;
+  burst(pendingPos.x*innerWidth, pendingPos.y*innerHeight, color);
+  toast('✨ 星星已点亮');
+  loadStats();
+});
+
+document.getElementById('cancel-create').addEventListener('click', () => {
+  document.getElementById('modal-create').classList.remove('active');
+});
+
+// ════════════════════════════════════════════
+//  LIGHT STAR
+// ════════════════════════════════════════════
+document.getElementById('confirm-light').addEventListener('click', async () => {
+  const name = document.getElementById('lighter-name').value.trim();
+  if (!name) { toast('请输入你的名字'); return; }
+
+  document.getElementById('modal-light').classList.remove('active');
+
+  const { ok, status, data } = await api('POST', `/api/star/${lightTarget}/light`, { lighterName: name });
+
+  if (status === 409) { toast('你已经点亮过这颗星了 ✨'); return; }
+  if (!ok)            { toast('点亮失败，请重试'); return; }
+
+  // Update local star
+  const idx = stars.findIndex(s => s.id === lightTarget);
+  if (idx >= 0) stars[idx] = data.star;
+
+  document.getElementById('star-' + lightTarget)?.remove();
+  createStarEl(data.star);
+  burst(data.star.x*innerWidth, data.star.y*innerHeight, data.star.color);
+  toast(`✨ "${data.star.name}" 更亮了！`);
+  loadStats();
+});
+
+document.getElementById('cancel-light').addEventListener('click', () => {
+  document.getElementById('modal-light').classList.remove('active');
+});
+
+// ════════════════════════════════════════════
+//  BUTTONS
+// ════════════════════════════════════════════
+document.getElementById('btn-home').addEventListener('click', () => {
+  location.href = location.pathname;
+});
+
+document.getElementById('btn-share').addEventListener('click', () => {
+  const url  = `${location.origin}${location.pathname}?sky=${mySkyId}`;
+  const code = mySkyId;
+  navigator.clipboard.writeText(url).catch(() => {});
+  toast(`链接已复制！代码: ${code} 🌟`);
+});
+
+const shareBox = document.getElementById('share-box');
+document.getElementById('btn-enter').addEventListener('click', () => {
+  shareBox.classList.toggle('show');
+  if (shareBox.classList.contains('show'))
+    setTimeout(() => document.getElementById('visit-code').focus(), 80);
+});
+
+document.getElementById('btn-visit').addEventListener('click', () => {
+  const code = document.getElementById('visit-code').value.trim().toUpperCase();
+  if (!code) { toast('请输入星空代码'); return; }
+  if (code === mySkyId) { location.href = location.pathname; return; }
+  location.href = `${location.pathname}?sky=${code}`;
+});
+document.getElementById('visit-code').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-visit').click();
+});
+
+document.getElementById('btn-clear').addEventListener('click', async () => {
+  if (!isOwner) { toast('这不是你的星空'); return; }
+  if (!confirm('确定要清空所有星星吗？')) return;
+  const { ok } = await api('DELETE', `/api/sky/${currentSkyId}/stars`, { ownerToken: myToken });
+  if (!ok) { toast('操作失败'); return; }
+  stars = []; renderAll(); toast('星空已清空');
+});
+
+// ════════════════════════════════════════════
+//  PARTICLE BURST
+// ════════════════════════════════════════════
+function burst(cx, cy, color) {
+  const pc = document.createElement('canvas');
+  pc.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:50;';
+  pc.width = innerWidth; pc.height = innerHeight;
+  document.body.appendChild(pc);
+  const pCtx = pc.getContext('2d');
+
+  const pts = Array.from({length:32}, () => {
+    const a = Math.random()*Math.PI*2, s = 2+Math.random()*7;
+    return { x:cx, y:cy, vx:Math.cos(a)*s, vy:Math.sin(a)*s, r:1+Math.random()*2.5, alpha:1 };
+  });
+
+  (function frame() {
+    pCtx.clearRect(0,0,pc.width,pc.height);
+    let alive = false;
+    pts.forEach(p => {
+      p.x+=p.vx; p.y+=p.vy; p.vy+=.1; p.alpha-=.022;
+      if (p.alpha>0) {
+        alive=true;
+        pCtx.beginPath(); pCtx.arc(p.x,p.y,p.r,0,Math.PI*2);
+        pCtx.fillStyle=color; pCtx.globalAlpha=p.alpha; pCtx.fill();
+      }
+    });
+    pCtx.globalAlpha=1;
+    if (alive) requestAnimationFrame(frame); else pc.remove();
+  })();
+}
+
+// ════════════════════════════════════════════
+//  TOAST + KEYBOARD
+// ════════════════════════════════════════════
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay').forEach(o => o.classList.remove('active'));
+    shareBox.classList.remove('show');
+  }
+});
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target===o) o.classList.remove('active'); });
+});
+
+// ════════════════════════════════════════════
+//  START
+// ════════════════════════════════════════════
+init();
+</script>
+</body>
+</html>
