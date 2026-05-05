@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>✨ StarSky — 我的星空</title>
 <style>
-* { margin:0; padding:0; box-sizing:border-box; touch-action:manipulation; }
+* { margin:0; padding:0; box-sizing:border-box; }
 
 body {
   background:#000;
@@ -15,6 +15,7 @@ body {
   user-select:none;
   -webkit-tap-highlight-color:transparent;
 }
+button, input, textarea { touch-action:manipulation; }
 
 #canvas-bg { position:fixed; inset:0; z-index:0; }
 #stars-layer { position:fixed; inset:0; z-index:1; }
@@ -526,7 +527,6 @@ function createStarEl(star) {
   // ── mobile touch ──
   let pressTimer = null, touchMoved = false, touchStart = null;
   el.addEventListener('touchstart', e => {
-    e.stopPropagation();
     touchMoved = false;
     touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     pressTimer = setTimeout(() => {
@@ -577,8 +577,29 @@ function openCreateModal(x, y) {
   setTimeout(() => document.getElementById('star-name').focus(), 80);
 }
 
-layer.addEventListener('click',  e => { if (e.target===layer)  openCreateModal(e.clientX, e.clientY); });
-canvas.addEventListener('click', e => openCreateModal(e.clientX, e.clientY));
+// Desktop: click on empty space
+layer.addEventListener('click', e => {
+  if (e.target === layer) openCreateModal(e.clientX, e.clientY);
+});
+
+// Mobile: explicit touchend on empty space (more reliable than synthesized click)
+const lt = { active:false, moved:false, x:0, y:0 };
+layer.addEventListener('touchstart', e => {
+  lt.active = (e.target === layer);
+  lt.moved  = false;
+  if (lt.active) { lt.x = e.touches[0].clientX; lt.y = e.touches[0].clientY; }
+}, { passive:true });
+layer.addEventListener('touchmove', e => {
+  if (!lt.active) return;
+  if (Math.abs(e.touches[0].clientX - lt.x) > 8 ||
+      Math.abs(e.touches[0].clientY - lt.y) > 8) lt.moved = true;
+}, { passive:true });
+layer.addEventListener('touchend', e => {
+  if (!lt.active || lt.moved || e.target !== layer) return;
+  lt.active = false;
+  e.preventDefault(); // stop ghost click from also firing
+  openCreateModal(lt.x, lt.y);
+});
 
 document.getElementById('confirm-create').addEventListener('click', async () => {
   const name = document.getElementById('star-name').value.trim() || `星星 #${stars.length+1}`;
