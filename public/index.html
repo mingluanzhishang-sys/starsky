@@ -441,6 +441,18 @@ function hideLoading() {
 async function loadStars() {
   const { ok, status, data } = await api('GET', `/api/sky/${currentSkyId}`);
   if (!ok) {
+    // Own sky lost (server restart) — silently recreate so user can keep using the site
+    if (status === 404 && isOwner) {
+      const r = await api('POST', '/api/sky');
+      if (r.ok) {
+        mySkyId = r.data.skyId; myToken = r.data.ownerToken;
+        currentSkyId = mySkyId;
+        localStorage.setItem(NS_KEY, mySkyId);
+        localStorage.setItem(NT_KEY, myToken);
+        document.getElementById('my-sky-code').textContent = mySkyId;
+      }
+      stars = []; renderAll(); return;
+    }
     if (status === 404) toast('找不到这个星空');
     stars = []; renderAll(); return;
   }
@@ -602,22 +614,38 @@ layer.addEventListener('touchend', e => {
 });
 
 document.getElementById('confirm-create').addEventListener('click', async () => {
-  const name = document.getElementById('star-name').value.trim() || `星星 #${stars.length+1}`;
-  const wish = document.getElementById('star-wish').value.trim();
+  const name  = document.getElementById('star-name').value.trim() || `星星 #${stars.length+1}`;
+  const wish  = document.getElementById('star-wish').value.trim();
   const color = randColor();
+  const size  = 4 + Math.random() * 14;
+  const brightness = 0.4 + Math.random() * 0.6;
 
   document.getElementById('modal-create').classList.remove('active');
 
-  const { ok, data } = await api('POST', `/api/sky/${currentSkyId}/star`, {
+  const payload = () => ({
     name, wish,
     x: pendingPos.x, y: pendingPos.y,
-    size:       4 + Math.random()*14,
-    color,
-    brightness: 0.4 + Math.random()*0.6,
+    size, color, brightness,
     ownerToken: myToken,
   });
 
-  if (!ok) { toast('创建失败，请重试'); return; }
+  let { ok, status, data } = await api('POST', `/api/sky/${currentSkyId}/star`, payload());
+
+  // Sky lost due to server restart — auto-recreate and retry once
+  if (!ok && (status === 404 || status === 403)) {
+    toast('正在重新连接星空...');
+    const r = await api('POST', '/api/sky');
+    if (r.ok) {
+      mySkyId = r.data.skyId; myToken = r.data.ownerToken;
+      currentSkyId = mySkyId;
+      localStorage.setItem(NS_KEY, mySkyId);
+      localStorage.setItem(NT_KEY, myToken);
+      document.getElementById('my-sky-code').textContent = mySkyId;
+      ({ ok, data } = await api('POST', `/api/sky/${currentSkyId}/star`, payload()));
+    }
+  }
+
+  if (!ok) { toast(`创建失败 (${status})，请刷新重试`); return; }
 
   stars.push(data.star);
   createStarEl(data.star);
