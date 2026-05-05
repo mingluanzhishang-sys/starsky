@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>✨ StarSky — 我的星空</title>
 <style>
-* { margin:0; padding:0; box-sizing:border-box; }
+* { margin:0; padding:0; box-sizing:border-box; touch-action:manipulation; }
 
 body {
   background:#000;
@@ -13,6 +13,7 @@ body {
   font-family:'Segoe UI',sans-serif;
   cursor:crosshair;
   user-select:none;
+  -webkit-tap-highlight-color:transparent;
 }
 
 #canvas-bg { position:fixed; inset:0; z-index:0; }
@@ -135,6 +136,17 @@ body {
 .tt-name    { color:#e9d5ff; font-size:15px; font-weight:500; letter-spacing:2px; margin-bottom:4px; }
 .tt-wish    { color:rgba(167,139,250,.7); font-size:11px; letter-spacing:1px; margin-bottom:5px; }
 .tt-lighters{ color:rgba(167,139,250,.45); font-size:10px; letter-spacing:1px; }
+.tt-light-btn {
+  display:none; margin-top:10px; width:100%;
+  background:linear-gradient(135deg,#7c3aed,#6d28d9);
+  border:none; color:#fff; padding:8px; border-radius:8px;
+  font-size:12px; letter-spacing:2px; cursor:pointer;
+  transition:all .2s;
+}
+.tt-light-btn:active { transform:scale(.96); }
+#tooltip.touch-mode .tt-light-btn { display:block; }
+#tooltip { pointer-events:none; }
+#tooltip.touch-mode { pointer-events:all; }
 .tooltip-arrow {
   width:0; height:0;
   border-left:7px solid transparent; border-right:7px solid transparent;
@@ -285,6 +297,7 @@ body {
     <div class="tt-name"    id="tt-name">—</div>
     <div class="tt-wish"    id="tt-wish"></div>
     <div class="tt-lighters"id="tt-lighters"></div>
+    <button class="tt-light-btn" id="tt-light-btn">点亮 ✨</button>
   </div>
   <div class="tooltip-arrow"></div>
 </div>
@@ -390,14 +403,19 @@ async function init() {
 
   document.getElementById('my-sky-code').textContent = mySkyId;
 
+  const mobile = isMobile();
   if (!isOwner) {
-    document.getElementById('title').textContent   = '✦ 别人的星空 ✦';
-    document.getElementById('subtitle').textContent = '右键点亮一颗星 · 悬停查看';
-    document.getElementById('info').textContent     = '右键点击星星来点亮它 · 悬停查看';
+    document.getElementById('title').textContent    = '✦ 别人的星空 ✦';
+    document.getElementById('subtitle').textContent = mobile ? '点击星星查看 · 长按点亮' : '右键点亮一颗星 · 悬停查看';
+    document.getElementById('info').textContent     = mobile ? '点击星星查看信息 · 长按点亮它' : '右键点击星星来点亮它';
     document.getElementById('btn-home').style.display  = 'block';
     document.getElementById('btn-share').style.display = 'none';
     document.getElementById('btn-clear').style.display = 'none';
     document.getElementById('sky-badge').style.display = 'none';
+  } else {
+    document.getElementById('info').textContent = mobile
+      ? '点击空白处创建星星 · 长按星星可点亮'
+      : '点击空白处创建星星 · 悬停查看 · 右键点亮星星';
   }
 
   await loadStars();
@@ -405,9 +423,9 @@ async function init() {
   hideLoading();
 
   if (isOwner && stars.length === 0)
-    setTimeout(() => toast('欢迎！点击星空任意处创建你的第一颗星 ✨'), 600);
+    setTimeout(() => toast(mobile ? '欢迎！点击星空任意处创建你的第一颗星 ✨' : '欢迎！点击星空任意处创建你的第一颗星 ✨'), 600);
   if (!isOwner)
-    setTimeout(() => toast(`正在游览 ${currentSkyId} 的星空 · 右键点亮星星`), 600);
+    setTimeout(() => toast(mobile ? `长按星星可以点亮它 ✨` : `正在游览 ${currentSkyId} 的星空 · 右键点亮星星`), 600);
 }
 
 function hideLoading() {
@@ -438,6 +456,42 @@ async function loadStats() {
 
 const layer   = document.getElementById('stars-layer');
 const tooltip = document.getElementById('tooltip');
+const isMobile = () => 'ontouchstart' in window;
+
+function showTooltip(star, el, touchMode) {
+  document.getElementById('tt-name').textContent     = star.name || '无名星';
+  document.getElementById('tt-wish').textContent     = star.wish ? `"${star.wish}"` : '';
+  document.getElementById('tt-lighters').textContent = star.lighters?.length
+    ? `✨ ${star.lighters.join(' · ')} 点亮了它`
+    : '还没有人点亮过';
+  document.getElementById('tt-light-btn')._starId = star.id;
+  const r = el.getBoundingClientRect();
+  tooltip.style.left = (r.left + r.width / 2) + 'px';
+  tooltip.style.top  = r.top + 'px';
+  tooltip.classList.toggle('touch-mode', touchMode);
+  tooltip.classList.add('visible');
+}
+function hideTooltip() {
+  tooltip.classList.remove('visible', 'touch-mode');
+}
+function openLightModal(starId) {
+  lightTarget = starId;
+  document.getElementById('lighter-name').value = '';
+  document.getElementById('modal-light').classList.add('active');
+  setTimeout(() => document.getElementById('lighter-name').focus(), 80);
+}
+
+// dismiss touch tooltip on outside tap
+document.addEventListener('touchstart', e => {
+  if (tooltip.classList.contains('touch-mode') && !tooltip.contains(e.target))
+    hideTooltip();
+}, { passive: true });
+
+document.getElementById('tt-light-btn').addEventListener('click', () => {
+  const starId = document.getElementById('tt-light-btn')._starId;
+  hideTooltip();
+  if (starId != null) openLightModal(starId);
+});
 
 function createStarEl(star) {
   const el = document.createElement('div');
@@ -457,25 +511,44 @@ function createStarEl(star) {
     transform:translate(-50%,-50%) scale(0);
   `;
 
-  el.addEventListener('mouseenter', () => {
-    document.getElementById('tt-name').textContent     = star.name || '无名星';
-    document.getElementById('tt-wish').textContent     = star.wish ? `"${star.wish}"` : '';
-    document.getElementById('tt-lighters').textContent = star.lighters?.length
-      ? `✨ ${star.lighters.join(' · ')} 点亮了它`
-      : '还没有人点亮过';
-    const r = el.getBoundingClientRect();
-    tooltip.style.left = (r.left + r.width/2) + 'px';
-    tooltip.style.top  = r.top + 'px';
-    tooltip.classList.add('visible');
+  // ── desktop hover ──
+  el.addEventListener('mouseenter', () => showTooltip(star, el, false));
+  el.addEventListener('mouseleave', () => {
+    if (!tooltip.classList.contains('touch-mode')) hideTooltip();
   });
-  el.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
 
+  // ── desktop right-click ──
   el.addEventListener('contextmenu', e => {
     e.preventDefault();
-    lightTarget = star.id;
-    document.getElementById('lighter-name').value = '';
-    document.getElementById('modal-light').classList.add('active');
-    setTimeout(() => document.getElementById('lighter-name').focus(), 80);
+    openLightModal(star.id);
+  });
+
+  // ── mobile touch ──
+  let pressTimer = null, touchMoved = false, touchStart = null;
+  el.addEventListener('touchstart', e => {
+    e.stopPropagation();
+    touchMoved = false;
+    touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      hideTooltip();
+      openLightModal(star.id);
+    }, 500);
+  }, { passive: true });
+  el.addEventListener('touchmove', e => {
+    if (!touchStart) return;
+    const dx = Math.abs(e.touches[0].clientX - touchStart.x);
+    const dy = Math.abs(e.touches[0].clientY - touchStart.y);
+    if (dx > 8 || dy > 8) { touchMoved = true; clearTimeout(pressTimer); pressTimer = null; }
+  }, { passive: true });
+  el.addEventListener('touchend', e => {
+    if (pressTimer) {
+      clearTimeout(pressTimer); pressTimer = null;
+      if (!touchMoved) {
+        e.preventDefault();
+        showTooltip(star, el, true);
+      }
+    }
   });
 
   layer.appendChild(el);
